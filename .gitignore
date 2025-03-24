@@ -14,3 +14,8 @@ logs
 .DS_Store
 Thumbs.db
 mongodb-compass_1.45.4_amd64.deb
+
+#Testing files
+test.js
+bot.js
+/home/miladi/repos/milady-shady-bot/config/test.js
