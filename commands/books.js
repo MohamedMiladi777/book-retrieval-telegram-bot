@@ -17,29 +17,30 @@ const bookCommand = async (ctx) => {
 
     const categoryName = callbackData.replace("category_", "").trim();
     console.log("Extract the category name:", categoryName);
-    console.log(
-      "Extracted category name:",
-      categoryName,
-      "| Char codes:",
-      categoryName.split("").map((c) => c.charCodeAt(0))
-    );
+    //Debug: Check for invisible chars
+    // console.log(
+    //   "Extracted category name:",
+    //   categoryName,
+    //   "| Char codes:",
+    //   categoryName.split("").map((c) => c.charCodeAt(0))
+    // );
 
     const category = await Category.findOne({ name: categoryName });
 
     if (!category) {
-      return ctx.reply("No category is found!");
+      return ctx.reply("❌ No category found.");
     }
 
     const books = await Book.find({ category: category._id });
     console.log("Fetched books from DB:", books);
     if (books.length === 0) {
-      return ctx.reply("No books available at the moment.");
+      return ctx.reply("📚 No books available in this category.");
     }
 
     const buttons = books.map((book) =>
       Markup.button.callback(
-        book.title,
-        `book${book.title.replace(/\s+/g, "_")}`
+        `📖 ${book.title}`,
+        `book_${book.title.replace(/\s+/g, "_")}`
       )
     );
 

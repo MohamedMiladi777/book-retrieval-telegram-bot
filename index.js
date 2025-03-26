@@ -7,6 +7,7 @@ dotenv.config();
 import { Markup, Telegraf } from "telegraf";
 import categoriesCommand from "./commands/categories.js";
 import bookCommand from "./commands/books.js";
+import downloadCommand from "./commands/download.js";
 // assert and refuse to start bot if token or webhookDomain is not passed
 if (!process.env.BOT_TOKEN) throw new Error('"BOT_TOKEN" env var is required!');
 //default to PORT 4040
@@ -25,6 +26,8 @@ bot.on("callback_query", async (ctx) => {
   const callbackData = ctx.callbackQuery?.data;
   if (callbackData?.startsWith("category_")) {
     await bookCommand(ctx);
+  } else if (callbackData?.startsWith("book_")) {
+    await downloadCommand(ctx);
   }
 });
 bot.launch();
