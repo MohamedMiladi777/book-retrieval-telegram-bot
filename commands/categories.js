@@ -11,12 +11,12 @@ const categoriesCommand = async (ctx) => {
     }
 
     const buttons = categories.map(category => 
-      Markup.button.callback(category.name, `category_${category.name}`)
+      Markup.button.callback(category.name, `category_${category.name.replace(/\s+/g, "_")}`)
     );
     
     await ctx.reply(
       "📚 Select a book category:",
-      Markup.inlineKeyboard(buttons, { columns: 2 })
+      Markup.inlineKeyboard(buttons.map(btn => [btn]))
     );
   } catch (error) {
     console.error("Error fetching categories:", error);
