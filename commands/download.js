@@ -12,14 +12,11 @@ const downloadCommand = async (ctx) => {
     }
 
     // Extract book title from callbackData
-    const bookTitle = callbackData
-      .replace("book_", "")
-      .replace(/_/g, " ")
-      .trim();
-    console.log("Extracted Book Title:", bookTitle);
+    const bookId = callbackData.replace("book_", "").trim();
+    console.log("Extracted book ID:", bookId);
 
     // Query MongoDB to find the book by title
-    const book = await Book.findOne({ title: bookTitle });
+    const book = await Book.findById(bookId);
 
     // Log fetched book
     console.log("Fetched Book:", book);
@@ -30,7 +27,8 @@ const downloadCommand = async (ctx) => {
     }
 
     // Send download link
-    await ctx.reply(`📥 Click below to download:\n${book.downloadUrl}`);
+    // await ctx.reply(`📥 Click below to download:\n${book.downloadUrl}`);
+    await ctx.replyWithDocument(book.fileId);
   } catch (error) {
     console.error("❌ Error fetching book:", error);
     ctx.reply("❌ An error occurred while fetching the book.");
