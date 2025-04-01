@@ -10,7 +10,7 @@ import Category from "../models/categoryModel.js";
 const bookCommand = async (ctx) => {
   try {
     const callbackData = ctx.callbackQuery?.data;
-    console.log("callbackData", callbackData);
+    // console.log("callbackData", callbackData);
     if (!callbackData) {
       return ctx.reply("Invalid book selection");
     }
@@ -37,12 +37,16 @@ const bookCommand = async (ctx) => {
       return ctx.reply("📚 No books available in this category.");
     }
 
-    const buttons = books.map((book) =>
-      Markup.button.callback(
-        `📖 ${book.title}`,
-        `book_${book.title.replace(/\s+/g, "_")}`
-      )
-    );
+    const buttons = books.map((book) => {
+      const callbackData = `book_${book._id.toString()}`; // Using MongoDB ID
+
+      console.log(`Generated callback data: ${callbackData}`); // Debugging
+      return Markup.button.callback(`📖 ${book.title}`, callbackData);
+      // Markup.button.callback(
+      //   `📖 ${book.title}`,
+      //   `book_${book.title.replace(/\s+/g, "_")}`
+      // );
+    });
 
     await ctx.reply(
       "📖 Select a book:",

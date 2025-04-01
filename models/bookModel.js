@@ -29,6 +29,10 @@ const bookSchema = new mongoose.Schema({
         type: Date, // Field type is Date
         default: Date.now // Sets the current date/time by default
     }
+    , fileId: {
+        type: String,
+        required: true
+    }
 });
 
 
