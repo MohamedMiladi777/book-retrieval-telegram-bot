@@ -1,24 +1,8 @@
-import dotenv from "dotenv";
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 import fs from "fs";
 import mime from "mime";
-import { FmtString } from "telegraf/format";
 import "../config/database.js";
-import saveBook from "../utils/book-utils.js";
-import mongoose from "mongoose";
-import { connect } from "http2";
-import connectDB from "../config/database.js";
-
-// dotenv.config({ path: "../.env" });
-console.log("AWS Region:", process.env.AWS_REGION);
-// Set up AWS client
-const s3Client = new S3Client({
-  region: process.env.AWS_REGION,
-  credentials: {
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
-  },
-});
+import saveBook from "./book-utils.js";
 
 // Function to upload a file to S3
 /**
@@ -30,6 +14,23 @@ const s3Client = new S3Client({
  */
 const uploadFileToS3 = async (filePath, s3Key) => {
   try {
+    // console.log("AWS Region:", process.env.AWS_REGION);
+    // Set up AWS client
+    const s3Client = new S3Client({
+      region: process.env.AWS_REGION,
+      credentials: {
+        accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+      },
+    });
+
+    console.log("AWS Credentials Loaded:", {
+      region: process.env.AWS_REGION,
+      accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+      secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
+        ? "[redacted]"
+        : "undefined",
+    });
     console.log("Starting file check");
 
     // a readable stream from the file
@@ -71,7 +72,7 @@ const uploadAndSaveBook = async (
   fileId
 ) => {
   try {
-    await connectDB();
+    // await connectDB();
     const downloadUrl = await uploadFileToS3(filePath, s3Key);
     const savedBook = await saveBook(
       title,
@@ -88,20 +89,4 @@ const uploadAndSaveBook = async (
   }
 };
 
-const test = async () => {
-  try {
-    const book = await uploadAndSaveBook(
-      "test.pdf",
-      "books/test.pdf",
-      "testing a book",
-      "hello",
-      "67e68461e6f25bcaeaed3b82",
-      "testFileId123"
-    );
-    console.log("Success:", book);
-  } catch (error) {
-    console.error("Test failed:", error.message);
-  }
-};
-
-test();
+export { uploadFileToS3, uploadAndSaveBook };
