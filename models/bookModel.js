@@ -6,7 +6,7 @@ const bookSchema = new mongoose.Schema({
     title: {
         type: String, // Field type is String
         required: true,// The title is required when adding a book
-        unique: true // The title must be unique
+        //unique: true  The title must be unique
     },
     author: {
         type: String, // Field type is String
