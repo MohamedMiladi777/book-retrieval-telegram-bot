@@ -3,10 +3,14 @@ import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 import fs from "fs";
 import mime from "mime";
 import { FmtString } from "telegraf/format";
+import "../config/database.js";
+import saveBook from "../utils/book-utils.js";
+import mongoose from "mongoose";
+import { connect } from "http2";
+import connectDB from "../config/database.js";
 
 dotenv.config({ path: "../.env" });
 console.log("AWS Region:", process.env.AWS_REGION);
-
 // Set up AWS client
 const s3Client = new S3Client({
   region: process.env.AWS_REGION,
@@ -57,7 +61,51 @@ const uploadFileToS3 = async (filePath, s3Key) => {
     throw error;
   }
 };
+
+const uploadAndSaveBook = async (
+  filePath,
+  s3Key,
+  title,
+  author,
+  category,
+  fileId
+) => {
+  try {
+    await connectDB();
+    const downloadUrl = await uploadFileToS3(filePath, s3Key);
+    const savedBook = await saveBook(
+      title,
+      author,
+      category,
+      downloadUrl,
+      undefined,
+      fileId
+    );
+    return savedBook;
+  } catch (error) {
+    console.error("Error in uploadAndSaveBook:", error.message);
+    throw error;
+  }
+};
+
 // Example usage
-uploadFileToS3("SunnahAhmad.pdf", "books/SunnahAhmad.pdf")
-  .then((url) => console.log("Uploaded Url:", url))
-  .catch((err) => console.log("Upload failed: ", err));
+// uploadFileToS3("SunnahAhmad.pdf", "books/SunnahAhmad.pdf")
+//   .then((url) => console.log("Uploaded Url:", url))
+//   .catch((err) => console.log("Upload failed: ", err));
+const test = async () => {
+  try {
+    const book = await uploadAndSaveBook(
+      "test.pdf",
+      "books/test.pdf",
+      "testing a book",
+      "hello",
+      "67e68461e6f25bcaeaed3b82",
+      "testFileId123"
+    );
+    console.log("Success:", book);
+  } catch (error) {
+    console.error("Test failed:", error.message);
+  }
+};
+
+test();
