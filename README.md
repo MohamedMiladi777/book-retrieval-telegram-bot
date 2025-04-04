@@ -84,21 +84,4 @@ Log in to AWS Console, go to S3, and create a bucket.
 Note the region (e.g., eu-west-3).
 
 
-milady-shady-bot/
-├── commands/         # Bot command handlers
-│   ├── books.js
-│   ├── categories.js
-│   └── download.js
-├── config/           # Configuration files
-│   └── database.js
-├── models/           # MongoDB schemas
-│   ├── bookModel.js
-│   └── categoryModel.js
-├── utils/            # Utility functions
-│   ├── file-utils.js
-│   └── s3-utils.js
-├── .gitignore        # Ignored files (e.g., node_modules, .env)
-├── index.js          # Main bot file
-├── package.json      # Dependencies and scripts
-└── package-lock.json # Dependency lockfile
 
