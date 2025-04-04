@@ -3,6 +3,7 @@ dotenv.config();
 import express from "express";
 import Book from "./models/bookModel.js";
 import connectDB from "./config/database.js";
+import Category from "./models/categoryModel.js";
 import fs from "fs";
 import { Markup, Telegraf } from "telegraf";
 import categoriesCommand from "./commands/categories.js";
@@ -38,11 +39,56 @@ bot.on("callback_query", async (ctx) => {
 // Handle the /addbook command
 bot.on("document", async (ctx) => {
   const caption = ctx.message?.caption || "";
-
   if (!caption.startsWith("/addbook")) return;
+
   console.log("Received /addbook command");
   console.log("Received message:", ctx.message);
+
+  // const ADMIN_ID = "1921769988"
+  // if (ctx.message.from.id !== ADMIN_ID) {
+  //   return ctx.reply(
+  //     "You are not authorized to use this command, contact the developer."
+  //   );
+  // }
+
   try {
+    // parse caption for title, author and category
+    const parts = caption.replace("/addbook", "").trim().split(",");
+    const title =
+      parts
+        .find((p) => p.trim().startsWith("Title:"))
+        ?.replace("Title:", "")
+        .trim() || ctx.message.document.file_name.replace(".pdf", "");
+    const author =
+      parts
+        .find((p) => p.trim().startsWith("Author:"))
+        ?.replace("Author:", "")
+        .trim() || "Unknown";
+
+    const categoryName = parts
+      .find((p) => p.trim().startsWith("Category:"))
+      ?.replace("Category:", "")
+      .trim();
+
+    console.log("Parsed title:", title);
+    console.log("Parsed author:", author);
+    console.log("Parsed categoryName:", categoryName);
+
+    if (!categoryName) {
+      return ctx.reply(
+        "Please provide a category in the format: Category: <category>"
+      );
+    }
+
+    const category = await Category.findOne({ name: categoryName });
+    console.log("Found category:", category);
+    if (!category) {
+      return ctx.reply(
+        `Category "${categoryName}" not found. Available categories: ${await Category.find().then(
+          (cats) => cats.map((c) => c.name).join(", ")
+        )}`
+      );
+    }
     const fileId = ctx.message.document.file_id;
     const fileName = ctx.message.document.file_name || "uploadedBook.pdf";
     console.log("File ID:", fileId);
@@ -67,15 +113,16 @@ bot.on("document", async (ctx) => {
     const book = await uploadAndSaveBook(
       localPath,
       s3Key,
-      "Testing a book",
-      "Hello",
-      "67e68461e6f25bcaeaed3b82",
+      title,
+      author,
+      category._id,
       fileId
     );
+
     console.log("Book uploaded and saved:", book);
     // Send a message to the user with the book information
     fs.unlinkSync(localPath); // Clean up the local file after upload
-    ctx.reply(`Book added ${book.title} by ${book.author}`);
+    ctx.reply(`Book added: ${book.title} by ${book.author} in ${categoryName}`);
   } catch (error) {
     console.error("Error adding book:", error.message, error.stack);
     ctx.reply(`Error adding book: ${error.message}`);

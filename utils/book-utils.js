@@ -9,8 +9,20 @@ const saveBook = async (
   fileId
 ) => {
   try {
+    //check if book already exists
+    let book = await Book.findOne({ title });
+    if (book) {
+      book.author = author;
+      book.category = category;
+      book.downloadUrl = downloadUrl;
+      book.description = description;
+      book.fileId = fileId;
+      const updatedBook = await book.save();
+      console.log("Book updated successfully:", updatedBook);
+      return updatedBook;
+    }
     //create a new book document
-    const book = new Book({
+    book = new Book({
       title,
       author,
       category: category,
@@ -27,5 +39,4 @@ const saveBook = async (
   }
 };
 
-
-export default saveBook
+export default saveBook;
