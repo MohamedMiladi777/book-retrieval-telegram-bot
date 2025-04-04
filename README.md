@@ -1,4 +1,4 @@
-## المكتة اﻷثرية
+## المكتبة اﻷثرية
 A Telegram bot that allows users to browse books by category and download them from an AWS S3 bucket. Admins can add new books via a secure /addbook command. Built with Node.js, Telegraf, MongoDB, and AWS S3.
 
 ### Features
