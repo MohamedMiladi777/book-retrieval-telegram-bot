@@ -18,6 +18,9 @@ mongodb-compass_1.45.4_amd64.deb
 #Testing files
 test.js
 bot.js
-services/SunnahAhmad.pdf
+aws/
+scripts/books/
+services/SunnahAhmad.pdf/
+awscliv2.zip/
 /home/miladi/repos/milady-shady-bot/config/test.js
 /home/miladi/repos/milady-shady-bot/services/SunnahAhmad.pdf
