@@ -3,12 +3,12 @@ import path from "path"; // Imports path for file path handling
 import { PDFDocument } from "pdf-lib"; // Imports PDFDocument for metadata extraction
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3"; // Imports S3 client
 import mongoose from "mongoose"; // Imports mongoose for connection cleanup
-import Book from "./models/bookModel.js"; // Imports Book model
-import Category from "./models/categoryModel.js"; // Imports Category model
-import connectDB from "./config/database.js"; // Imports database connection
+import Book from "../models/bookModel.js"; // Fixed path to root models folder
+import Category from "../models/categoryModel.js"; // Fixed path
+import connectDB from "../config/database.js"; // Fixed path to root config folder
 import dotenv from "dotenv"; // Imports dotenv for environment variables
 
-dotenv.config(); // Loads environment variables from .env
+dotenv.config({ path: "../.env" }); // Loads environment variables from .env
 
 // Initializes S3 client with credentials and region
 const s3Client = new S3Client({
