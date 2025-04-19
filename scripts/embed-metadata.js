@@ -21,12 +21,17 @@ async function embedMetadata(folderPath, books) {
       pdfDoc.setSubject(book.description || "No description");
 
       // Saves the modified PDF to a byte array
-      const modifiedBytes = await pdfDoc.save();
+      // const modifiedBytes = await pdfDoc.save();
       // Writes the modified bytes back to the original file
-      await fs.writeFile(pdfPath, modifiedBytes);
+      const pdfBytesSerialized = await pdfDoc.save();
+      await fs.writeFile(pdfPath, pdfBytesSerialized);
 
       // Logs confirmation of metadata embedding
-      console.log(`Embedded metadata in ${book.filename}`);
+      const reloadedDoc = await PDFDocument.load(pdfBytesSerialized);
+      console.log(
+        `Embedded metadata in ${book.filename}, keywords:`,
+        reloadedDoc.getKeywords()
+      );
     } catch (error) {
       // Logs errors for individual books without stopping the loop
       console.error(`Failed to process ${book.filename}:`, error);
@@ -58,7 +63,7 @@ const books = [
 ];
 
 // Calls the embedMetadata function with error handling
-embedMetadata("./books/", books).catch(error => {
+embedMetadata("./books/", books).catch((error) => {
   console.error("Error embedding metadata:", error);
   process.exit(1); // Exits with error code for CLI
 });

@@ -19,6 +19,21 @@ const s3Client = new S3Client({
   },
 });
 
+// Maps Arabic categories to English for transliteration
+const categoryTransliteration = {
+  عقيدة: "Aqeedah",
+};
+
+function transliterateCategory(category) {
+  return (
+    categoryTransliteration[category] ||
+    category
+      .replace(/[\u0610-\u061A\u064B-\u065F]/g, "") // Remove Arabic diacritics
+      .replace(/[^a-zA-Z0-9]/g, "_") // Replace non-alphanumeric with underscore
+      .toLowerCase()
+  );
+}
+
 // Defines async function to upload a file to S3
 async function uploadFileToS3(filePath, s3Key) {
   // Reads file content into a buffer
@@ -60,7 +75,13 @@ async function uploadAndRegisterBooks(folderPath) {
         } else if (entry.name.endsWith(".pdf")) {
           // Constructs S3 key including subfolder
           const relativePath = path.relative(folderPath, fullPath);
-          const s3Key = `${s3BasePrefix}${relativePath.replace(/\\/g, "/")}`;
+          // Transliterates category name for S3 key
+          const originalCategory = relativePath.split(path.sep)[0];
+          const transliteratedCategory =
+            transliterateCategory(originalCategory);
+          const s3Key = `${s3BasePrefix}${transliteratedCategory}/${path.basename(
+            fullPath
+          )}`;
           const pdfFile = entry.name;
 
           // Uploads PDF to S3 and gets download URL
@@ -70,13 +91,16 @@ async function uploadAndRegisterBooks(folderPath) {
           // Extracts metadata from PDF
           const pdfBytes = await fs.readFile(fullPath);
           const pdfDoc = await PDFDocument.load(pdfBytes);
+          const keywordsString = pdfDoc.getKeywords();
+          const keywords = keywordsString ? keywordsString.split(",") : [];
           const metadata = {
             title: pdfDoc.getTitle() || path.basename(pdfFile, ".pdf"),
             author: pdfDoc.getAuthor() || "Unknown",
-            category: pdfDoc.getKeywords()?.[0] || "Unknown", // Takes first keyword
+            category: keywords.length > 0 ? keywords[0].trim() : "Unknown",
             description: pdfDoc.getSubject() || "No description for now",
           };
           console.log(`Extracted metadata for ${pdfFile}:`, metadata);
+          console.log(`Keywords for ${pdfFile}:`, keywords);
 
           // Finds or creates category in MongoDB
           let category = await Category.findOne({ name: metadata.category });
@@ -88,7 +112,9 @@ async function uploadAndRegisterBooks(folderPath) {
 
           // Registers or updates book in MongoDB
           let book = await Book.findOne({ title: metadata.title });
-          const fileId = `s3-${relativePath.replace(/\\/g, "/")}`;
+          const fileId = `s3-${transliteratedCategory}/${path.basename(
+            fullPath
+          )}`;
           if (book) {
             book.author = metadata.author;
             book.category = category._id;
