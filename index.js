@@ -18,12 +18,23 @@ if (!process.env.BOT_TOKEN) throw new Error('"BOT_TOKEN" env var is required!');
 //default to PORT 4040
 const PORT = process.env.PORT || 4040;
 const app = express();
-const bot = new Telegraf(process.env.BOT_TOKEN);
+const bot = new Telegraf(process.env.BOT_TOKEN, {
+  telegram: { apiRoot: "http://15.236.218.255" },
+});
 
 app.use(express.json());
 
 //Connect to the database
 connectDB();
+
+bot.telegram
+  .setWebhook("http://15.236.218.255")
+  .then(() => {
+    console.log("Webhook set to http://15.236.218.255");
+  })
+  .catch((error) => {
+    console.error("Failed to set webhook:", error.message);
+  });
 
 bot.help((ctx) => ctx.reply("Help message"));
 bot.command("categories", categoriesCommand);

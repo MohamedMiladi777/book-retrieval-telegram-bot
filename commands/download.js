@@ -1,9 +1,9 @@
-import { time } from "console";
 import Book from "../models/bookModel.js";
 import axios from "axios";
+import FormData from "form-data";
 
-// Define the async function
 const downloadCommand = async (ctx) => {
+  let fileUrl = null;
   try {
     // Extract callback data
     const callbackData = ctx.callbackQuery?.data;
@@ -13,23 +13,32 @@ const downloadCommand = async (ctx) => {
       return ctx.reply("Invalid book selection.");
     }
 
-    // Extract book title from callbackData
+    // Extract book ID
     const bookId = callbackData.replace("book_", "").trim();
     console.log("Extracted book ID:", bookId);
 
-    // Query MongoDB to find the book by title
+    if (!/^[0-9a-f]{24}$/i.test(bookId)) {
+      throw new Error(`Invalid book ID format: ${bookId}`);
+    }
+    // Fetch book from MongoDB
     const book = await Book.findById(bookId);
-    // If no book is found, inform the user and return
     if (!book) {
       throw new Error("No book found with the given ID.");
     }
     console.log("Fetched Book:", book);
 
-    //Prepare the file URL and filename
-    const fileUrl = book.downloadUrl;
-    const fileName = `${book.title.replace(/[^a-zA-Z0-9 ]/g, "")}.pdf`; // Sanitize filename
+    // Prepare file URL and name
+    const fileUrl = book.downloadUrl; // e.g., books/Aqeedah/Khalal_v1.pdf
+    if (!fileUrl) {
+      throw Error(`Book "${book.title}" has no download URL`);
+    }
+    const fileName = `${book.title.replace(
+      /[^a-zA-Z0-9\u0600-\u06FF ]/g,
+      ""
+    )}.pdf`;
+    console.log("Prepared fileName:", fileName);
 
-    // Validate the S3 URL
+    // Validate the URL
     console.log("Validating S3 URL:", fileUrl);
     const response = await axios.head(fileUrl, {
       timeout: 5000,
@@ -44,10 +53,9 @@ const downloadCommand = async (ctx) => {
     });
     if (response.status !== 200) {
       throw new Error(
-        `S3 URL is not accessible : ${fileUrl} (Status: ${response.status})`
+        `S3 URL is not accessible: ${fileUrl} (Status: ${response.status})`
       );
     }
-
     const contentType = response.headers["content-type"]?.toLowerCase();
     if (!contentType?.includes("application/pdf")) {
       throw new Error(
@@ -55,61 +63,59 @@ const downloadCommand = async (ctx) => {
       );
     }
 
-    // Log fetched book
-    console.log("Fetched Book:", book);
-
-    // Send download link
-    // await ctx.reply(`📥 Click below to download:\n${book.downloadUrl}`);
-    console.log("Attempting to send document:", {
+    // Get file size
+    const fileSize = parseInt(response.headers["content-length"], 10);
+    console.log("File Size:", fileSize, "bytes");
+    const downloadResponse = await axios({
+      method: "get",
       url: fileUrl,
-      filename: fileName,
+      responseType: "stream",
     });
 
-    try {
-      await ctx.replyWithDocument(
-        {
-          url: fileUrl,
-          filename: fileName,
-        },
-        {
-          caption: `${book.title} by ${book.author}`,
-        }
-      );
-    } catch (docError) {
-      console.error("Failed to send document:", {
-        message: docError?.message || "No error message",
-        stack: docError?.stack || "No stack trace",
-        response: docError?.response
-          ? {
-              status: docError.response.status,
-              data: docError.response.data,
-            }
-          : "No response data",
-        code: docError?.code || "No error code",
-      });
-      // Fallback: Send URL as text
-      await ctx.reply(
-        `Unable to send the document directly. Download it here:\n${fileUrl}`,
-        { caption: `${book.title} by ${book.author}` }
-      );
-      console.log("Sent fallback text link");
+    const formData = new FormData();
+    formData.append("chat_id", ctx.chat.id);
+    formData.append("document", downloadResponse.data, {
+      filename: fileName,
+      contentType: "application/pdf",
+    });
+    formData.append("caption", `${book.title} by ${book.author}`);
+
+    console.log("Uploading document to Telegram");
+
+    const uploadResponse = await axios.post(
+      `http://15.236.218.255/bot${process.env.BOT_TOKEN}/sendDocument`,
+      formData,
+      { headers: formData.getHeaders(), timeout: 60000 }
+    );
+
+    if (!uploadResponse.data.ok) {
+      throw new Error(`Upload failed: ${JSON.stringify(uploadResponse.data)}`);
     }
+
+    console.log("Document sent successfully");
   } catch (error) {
     console.error("Error in downloadCommand:", {
-      message: error?.message || "No error message",
-      stack: error?.stack || "No stack trace",
-      code: error?.code || "No error code",
+      message: error.message || "No error message",
+      stack: error.stack || "No stack trace",
+      code: error.code || "No error code",
+      response: error.response
+        ? { status: error.response.status, data: error.response.data }
+        : "No response data",
     });
-    let userMessage = "❌ An error occurred while fetching the book.";
-    if (error.message.includes("No book found")) {
-      userMessage = "❌ Book not found.";
-    } else if (error.message.includes("S3 URL")) {
-      userMessage = `❌ Unable to access the book file: ${error.message}`;
-    }
-    await ctx.reply(userMessage);
-    console.log("Sent error message to user:", userMessage);
+    const errorMessage = fileUrl
+      ? `Unable to send the document. Click to download:\n${fileUrl}`
+      : `Unable to send the document: ${error.message}`;
+    const replyMarkup = fileUrl
+      ? {
+          reply_markup: {
+            inline_keyboard: [[{ text: "Download PDF", url: fileUrl }]],
+          },
+        }
+      : {};
+
+    await ctx.reply(errorMessage, replyMarkup);
+    console.log("Sent error message to user");
   }
 };
 
-// Export the function
 export default downloadCommand;
