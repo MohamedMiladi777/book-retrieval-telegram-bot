@@ -91,16 +91,25 @@ async function uploadAndRegisterBooks(folderPath) {
           // Extracts metadata from PDF
           const pdfBytes = await fs.readFile(fullPath);
           const pdfDoc = await PDFDocument.load(pdfBytes);
-          const keywordsString = pdfDoc.getKeywords();
-          const keywords = keywordsString ? keywordsString.split(",") : [];
+          const keywordsString = pdfDoc.getKeywords() || "";
+          const keywords = keywordsString
+            .split(/[, ]+/)
+            .map((kw) => kw.trim())
+            .filter((kw) => kw);
+          const seriesId =
+            keywords.find((kw) => kw.startsWith("series_")) || null;
           const metadata = {
             title: pdfDoc.getTitle() || path.basename(pdfFile, ".pdf"),
             author: pdfDoc.getAuthor() || "Unknown",
             category: keywords.length > 0 ? keywords[0].trim() : "Unknown",
             description: pdfDoc.getSubject() || "No description for now",
           };
-          console.log(`Extracted metadata for ${pdfFile}:`, metadata);
-          console.log(`Keywords for ${pdfFile}:`, keywords);
+          //console.log(`Extracted metadata for ${pdfFile}:`, metadata);
+          //console.log(`Keywords for ${pdfFile}:`, keywords);
+          console.log(`Extracted metadata for ${pdfFile}:`, {
+            ...metadata,
+            seriesId,
+          });
 
           // Finds or creates category in MongoDB
           let category = await Category.findOne({ name: metadata.category });
@@ -120,6 +129,7 @@ async function uploadAndRegisterBooks(folderPath) {
             book.category = category._id;
             book.downloadUrl = downloadUrl;
             book.fileId = fileId;
+            book.seriesId = seriesId;
             book.description = metadata.description;
             await book.save();
             console.log(`Updated book: ${metadata.title}`);
@@ -131,6 +141,7 @@ async function uploadAndRegisterBooks(folderPath) {
               downloadUrl,
               fileId,
               description: metadata.description,
+              seriesId,
             });
             await book.save();
             console.log(`Added book: ${metadata.title}`);
