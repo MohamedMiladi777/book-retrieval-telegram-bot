@@ -1,23 +1,25 @@
 import fs from "fs/promises"; // Imports promise-based fs for file operations
 import path from "path"; // Imports path for file path handling
 import { PDFDocument } from "pdf-lib"; // Imports PDFDocument for metadata extraction
-import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3"; // Imports S3 client
+import { BlobServiceClient, BlockBlobClient } from "@azure/storage-blob";
 import mongoose from "mongoose"; // Imports mongoose for connection cleanup
 import Book from "../models/bookModel.js"; // Fixed path to root models folder
 import Category from "../models/categoryModel.js"; // Fixed path
 import connectDB from "../config/database.js"; // Fixed path to root config folder
 import dotenv from "dotenv"; // Imports dotenv for environment variables
+import { blob } from "stream/consumers";
+import { uploadFileToAzure } from "../utils/blob-storage-utils.js"; // Change from "./utils/"
 
 dotenv.config({ path: "../.env" }); // Loads environment variables from .env
 
-// Initializes S3 client with credentials and region
-const s3Client = new S3Client({
-  region: process.env.AWS_REGION,
-  credentials: {
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
-  },
-});
+// Change: Replaced BlobServiceClient import with Azure-specific connection string setup
+const blobServiceClient = BlobServiceClient.fromConnectionString(
+  `DefaultEndpointsProtocol=https;AccountName=${process.env.AZURE_STORAGE_ACCOUNT_NAME};AccountKey=${process.env.AZURE_STORAGE_ACCOUNT_KEY};EndpointSuffix=core.windows.net`
+);
+
+const containerClient = blobServiceClient.getContainerClient(
+  process.env.AZURE_CONTAINER_NAME || "books"
+);
 
 // Maps Arabic categories to English for transliteration
 const categoryTransliteration = {
@@ -34,44 +36,29 @@ function transliterateCategory(category) {
   );
 }
 
-// Defines async function to upload a file to S3
-async function uploadFileToS3(filePath, s3Key) {
-  // Reads file content into a buffer
-  const fileStream = await fs.readFile(filePath);
-  // Configures S3 upload parameters
-  const params = {
-    Bucket: process.env.AWS_BUCKET_NAME,
-    Key: s3Key,
-    Body: fileStream,
-    ContentType: "application/pdf",
-  };
-  // Uploads file to S3 using PutObjectCommand
-  await s3Client.send(new PutObjectCommand(params));
-  // Returns the public URL of the uploaded file
-  return `https://${process.env.AWS_BUCKET_NAME}.s3.${process.env.AWS_REGION}.amazonaws.com/${s3Key}`;
-}
-
-// Defines async function to upload PDFs and register in MongoDB
 async function uploadAndRegisterBooks(folderPath) {
-  const s3BasePrefix = "books/"; // Sets S3 prefix for book storage
+  const azureBasePrefix = "books/"; // Sets S3 prefix for book storage
 
   try {
     // Connects to MongoDB
     await connectDB();
+    console.log("Connected to MongoDB successfully!");
 
     // Defines recursive function to process folder contents
     async function processFolder(currentPath) {
       // Reads directory entries with type information
       const entries = await fs.readdir(currentPath, { withFileTypes: true });
+      console.log(`Folder processed: ${currentPath}`);
 
       // Loops over each entry
       for (const entry of entries) {
         // Constructs full path for the entry
         const fullPath = path.join(currentPath, entry.name);
-
+        console.log(`Processing entry: ${entry.name} at ${fullPath}`);
         // Recursively processes subfolders
         if (entry.isDirectory()) {
           await processFolder(fullPath);
+          console.log(`Processed subfolder: ${entry.name}`);
         } else if (entry.name.endsWith(".pdf")) {
           // Constructs S3 key including subfolder
           const relativePath = path.relative(folderPath, fullPath);
@@ -79,29 +66,39 @@ async function uploadAndRegisterBooks(folderPath) {
           const originalCategory = relativePath.split(path.sep)[0];
           const transliteratedCategory =
             transliterateCategory(originalCategory);
-          const s3Key = `${s3BasePrefix}${transliteratedCategory}/${path.basename(
+          const blobName = `${azureBasePrefix}${transliteratedCategory}/${path.basename(
             fullPath
           )}`;
           const pdfFile = entry.name;
+          console.log(`Uploading PDF: ${pdfFile} as ${blobName}`);
 
-          // Uploads PDF to S3 and gets download URL
-          const downloadUrl = await uploadFileToS3(fullPath, s3Key);
-          console.log(`Uploaded PDF: ${s3Key}`);
+          // Uploads PDF to Azure and gets download URL
+          const downloadUrl = await uploadFileToAzure(fullPath, blobName);
+          console.log(`Uploaded PDF: ${blobName}`);
 
           // Extracts metadata from PDF
           const pdfBytes = await fs.readFile(fullPath);
           const pdfDoc = await PDFDocument.load(pdfBytes);
           const keywordsString = pdfDoc.getKeywords() || "";
           const keywords = keywordsString
-            .split(/[, ]+/)
+            .split(/[,\s]+/)
             .map((kw) => kw.trim())
             .filter((kw) => kw);
           const seriesId =
             keywords.find((kw) => kw.startsWith("series_")) || null;
+
+          // create category var, in the keywords, find the key that does not start
+          //with "series_", or fallback with "Unkown"
+
+          let extractedCategory =
+            keywords.find((kw) => !kw.startsWith("series_")) || "Unknown";
+          if (extractedCategory.includes("series_")) {
+            extractedCategory = extractedCategory.split("")[0];
+          }
           const metadata = {
             title: pdfDoc.getTitle() || path.basename(pdfFile, ".pdf"),
             author: pdfDoc.getAuthor() || "Unknown",
-            category: keywords.length > 0 ? keywords[0].trim() : "Unknown",
+            category: extractedCategory,
             description: pdfDoc.getSubject() || "No description for now",
           };
           //console.log(`Extracted metadata for ${pdfFile}:`, metadata);
@@ -112,21 +109,21 @@ async function uploadAndRegisterBooks(folderPath) {
           });
 
           // Finds or creates category in MongoDB
-          let category = await Category.findOne({ name: metadata.category });
-          if (!category) {
-            category = new Category({ name: metadata.category });
-            await category.save();
+          let categoryDoc = await Category.findOne({ name: metadata.category });
+          if (!categoryDoc) {
+            categoryDoc = new Category({ name: metadata.category });
+            await categoryDoc.save();
             console.log(`Created category: ${metadata.category}`);
           }
 
           // Registers or updates book in MongoDB
           let book = await Book.findOne({ title: metadata.title });
-          const fileId = `s3-${transliteratedCategory}/${path.basename(
+          const fileId = `azure-${transliteratedCategory}/${path.basename(
             fullPath
           )}`;
           if (book) {
             book.author = metadata.author;
-            book.category = category._id;
+            book.category = categoryDoc._id;
             book.downloadUrl = downloadUrl;
             book.fileId = fileId;
             book.seriesId = seriesId;
@@ -137,7 +134,7 @@ async function uploadAndRegisterBooks(folderPath) {
             book = new Book({
               title: metadata.title,
               author: metadata.author,
-              category: category._id,
+              category: categoryDoc._id,
               downloadUrl,
               fileId,
               description: metadata.description,

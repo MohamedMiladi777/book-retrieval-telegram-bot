@@ -25,6 +25,10 @@ const bookSchema = new mongoose.Schema({
     type: String, // Field type is String
     default: "No description available", // Default value if no description is provided
   },
+  seriesId: {
+    type: String,
+    default: null,
+  },
   createdAt: {
     type: Date, // Field type is Date
     default: Date.now, // Sets the current date/time by default

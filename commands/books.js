@@ -17,14 +17,6 @@ const bookCommand = async (ctx) => {
 
     const categoryName = callbackData.replace("category_", "").trim();
     console.log("Extract the category name:", categoryName);
-    //Debug: Check for invisible chars
-    // console.log(
-    //   "Extracted category name:",
-    //   categoryName,
-    //   "| Char codes:",
-    //   categoryName.split("").map((c) => c.charCodeAt(0))
-    // );
-
     const category = await Category.findOne({ name: categoryName });
 
     if (!category) {
@@ -36,21 +28,53 @@ const bookCommand = async (ctx) => {
     if (books.length === 0) {
       return ctx.reply("📚 No books available in this category.");
     }
+    //const seriesId = []
+    const singleBooks = [];
+    const seriesMap = {};
+    // make a for of loop to iterate each book object
+    // Group books by seriesId
+    for (const book of books) {
+      if (book.seriesId) {
+        if (!seriesMap[book.seriesId]) {
+          seriesMap[book.seriesId] = [];
+        }
+        seriesMap[book.seriesId].push(book);
+      } else {
+        singleBooks.push(book);
+      }
+    }
 
-    const buttons = books.map((book) => {
-      const callbackData = `book_${book._id.toString()}`; // Using MongoDB ID
+    const keyboard = [];
+    for (const seriesId in seriesMap) {
+      const seriesBooks = seriesMap[seriesId];
+      const seriesTitle = seriesBooks[0].title.split(" المجلد")[0];
+      const volumeCount = seriesBooks.length;
+      keyboard.push([
+        Markup.button.callback(
+          `${seriesTitle} (${volumeCount} volumes)`,
+          `series_${seriesId}`
+        ),
+      ]);
+    }
 
-      console.log(`Generated callback data: ${callbackData}`); // Debugging
-      return Markup.button.callback(`📖 ${book.title}`, callbackData);
-      // Markup.button.callback(
-      //   `📖 ${book.title}`,
-      //   `book_${book.title.replace(/\s+/g, "_")}`
-      // );
-    });
+    for (const book of singleBooks) {
+      keyboard.push([
+        Markup.button.callback(
+          `📖 ${book.title}`,
+          `book_${book._id.toString()}`
+        ),
+      ]);
+    }
+    //Use for for of loop to iterate over singlebooks
+    //push to button the book title and and convert the book._id to string
+
+    if (keyboard.length === 0) {
+      return ctx.reply("📚 No books available in this category.");
+    }
 
     await ctx.reply(
       "📖 Select a book:",
-      Markup.inlineKeyboard(buttons, { columns: 2 })
+      Markup.inlineKeyboard(keyboard, { columns: 2 })
     );
   } catch (error) {
     console.error("Error fetching books:", error);

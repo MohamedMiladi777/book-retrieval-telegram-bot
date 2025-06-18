@@ -1,8 +1,19 @@
 import Book from "../models/bookModel.js";
 import axios from "axios";
 import FormData from "form-data";
+import { BlobServiceClient } from "@azure/storage-blob";
 
 const downloadCommand = async (ctx) => {
+
+  
+  const blobServiceClient = BlobServiceClient.fromConnectionString(
+    process.env.AZURE_STORAGE_CONNECTION_STRING
+  );
+  const containerClient = blobServiceClient.getContainerClient(
+    process.env.AZURE_CONTAINER_NAME || "books"
+  );
+
+  const MAX_SIZE = 20 * 1024 * 1024;
   let fileUrl = null;
   try {
     // Extract callback data
@@ -38,61 +49,65 @@ const downloadCommand = async (ctx) => {
     )}.pdf`;
     console.log("Prepared fileName:", fileName);
 
-    // Validate the URL
-    console.log("Validating S3 URL:", fileUrl);
-    const response = await axios.head(fileUrl, {
-      timeout: 5000,
-      headers: {
-        "User-Agent": "TelegramBot",
-        Accept: "application/pdf",
-      },
-    });
-    console.log("S3 HEAD Response:", {
-      status: response.status,
-      headers: response.headers,
-    });
-    if (response.status !== 200) {
+    // Check if the file exists in Azure Blob Storage
+    const blobName = fileUrl.split("/").slice(-2).join("/");
+    const blockBlobClient = containerClient.getBlockBlobClient(blobName);
+    const properties = await blockBlobClient.getProperties();
+    console.log("Blob Properties:", properties);
+    if (properties.contentType?.toLowerCase() !== "application/pdf") {
       throw new Error(
-        `S3 URL is not accessible: ${fileUrl} (Status: ${response.status})`
-      );
-    }
-    const contentType = response.headers["content-type"]?.toLowerCase();
-    if (!contentType?.includes("application/pdf")) {
-      throw new Error(
-        `S3 URL does not point to a PDF: ${fileUrl} (Content-Type: ${contentType})`
+        `Blob does not point to a PDF: ${fileUrl} (Content-Type: ${properties.contentType})`
       );
     }
 
     // Get file size
-    const fileSize = parseInt(response.headers["content-length"], 10);
-    console.log("File Size:", fileSize, "bytes");
-    const downloadResponse = await axios({
-      method: "get",
-      url: fileUrl,
-      responseType: "stream",
-    });
+    const fileSize = properties.contentLength;
+    console.log("Sending data with Azure Blob URL directly");
+    if (fileSize < MAX_SIZE) {
+      console.log("sending data with S3 URL directly");
+      const uploadResponse = await axios.post(
+        `https://${process.env.AZURE_APP_NAME}.azurewebsites.net/bot${process.env.BOT_TOKEN}/sendDocument`,
+        {
+          chat_id: ctx.chat.id,
+          document: fileUrl,
+          caption: `${book.title} by ${book.author}`,
+        },
+        { timeout: 30000 }
+      );
 
-    const formData = new FormData();
-    formData.append("chat_id", ctx.chat.id);
-    formData.append("document", downloadResponse.data, {
-      filename: fileName,
-      contentType: "application/pdf",
-    });
-    formData.append("caption", `${book.title} by ${book.author}`);
+      if (!uploadResponse.data.ok) {
+        throw new Error(
+          `Upload failed: ${JSON.stringify(uploadResponse.data)}`
+        );
+      }
+      console.log("Document sent successfully, filesize is less than 50mb");
+    } else {
+      const downloadResponse = await blockBlobClient.download();
 
-    console.log("Uploading document to Telegram");
+      const formData = new FormData();
+      formData.append("chat_id", ctx.chat.id);
+      formData.append("document", downloadResponse.data, {
+        filename: fileName,
+        contentType: "application/pdf",
+      });
+      formData.append("caption", `${book.title} by ${book.author}`);
 
-    const uploadResponse = await axios.post(
-      `http://15.236.218.255/bot${process.env.BOT_TOKEN}/sendDocument`,
-      formData,
-      { headers: formData.getHeaders(), timeout: 60000 }
-    );
+      console.log("Uploading document to Telegram");
 
-    if (!uploadResponse.data.ok) {
-      throw new Error(`Upload failed: ${JSON.stringify(uploadResponse.data)}`);
+      const uploadResponse = await axios.post(
+        `http://15.236.218.255/bot${process.env.BOT_TOKEN}/sendDocument`,
+        formData,
+        { headers: formData.getHeaders(), timeout: 60000 }
+      );
+
+      if (!uploadResponse.data.ok) {
+        throw new Error(
+          `Upload failed: ${JSON.stringify(uploadResponse.data)}`
+        );
+      }
+
+      console.log("Document sent successfully");
     }
-
-    console.log("Document sent successfully");
   } catch (error) {
     console.error("Error in downloadCommand:", {
       message: error.message || "No error message",

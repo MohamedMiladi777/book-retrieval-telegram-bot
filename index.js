@@ -9,28 +9,24 @@ import { Markup, Telegraf } from "telegraf";
 import categoriesCommand from "./commands/categories.js";
 import bookCommand from "./commands/books.js";
 import downloadCommand from "./commands/download.js";
-import { uploadAndSaveBook } from "./utils/s3-utils.js";
+import { uploadAndSaveBook } from "./utils/blob-storage-utils.js";
 import { downloadFile } from "./utils/file-utils.js";
-// assert and refuse to start bot if token or webhookDomain is not passed
-console.log("AWS Region:", process.env.AWS_REGION);
-
 if (!process.env.BOT_TOKEN) throw new Error('"BOT_TOKEN" env var is required!');
 //default to PORT 4040
 const PORT = process.env.PORT || 4040;
 const app = express();
-const bot = new Telegraf(process.env.BOT_TOKEN, {
-  telegram: { apiRoot: "http://15.236.218.255" },
-});
+const bot = new Telegraf(process.env.BOT_TOKEN);
 
 app.use(express.json());
 
 //Connect to the database
+console.log(`MongoDB URI: ${process.env.MONGODB_URI}`);
 connectDB();
 
 bot.telegram
-  .setWebhook("http://15.236.218.255")
+  .setWebhook(`${process.env.WEBHOOK_URL}/bot`)
   .then(() => {
-    console.log("Webhook set to http://15.236.218.255");
+    console.log(`Webhook set to ${process.env.WEBHOOK_URL}/bot`);
   })
   .catch((error) => {
     console.error("Failed to set webhook:", error.message);
@@ -44,6 +40,19 @@ bot.on("callback_query", async (ctx) => {
     await bookCommand(ctx);
   } else if (callbackData?.startsWith("book_")) {
     await downloadCommand(ctx);
+  } else if (callbackData?.startsWith("series_")) {
+    const seriesId = callbackData.replace("series_", "");
+    const seriesBooks = await Book.find({ seriesId }).sort({ title: 1 });
+    if (seriesBooks.length === 0) {
+      return ctx.reply("No volumes found for this series.");
+    }
+    const keyboard = seriesBooks.map((book) => [
+      Markup.button.callback(`📖 ${book.title}`, `book_${book._id.toString()}`),
+    ]);
+    await ctx.reply(
+      "Select a volume:",
+      Markup.inlineKeyboard(keyboard, { columns: 1 })
+    );
   }
 });
 
@@ -118,12 +127,13 @@ bot.on("document", async (ctx) => {
     await downloadFile(fileLink.href, localPath);
     console.log("File downloaded to:", localPath);
 
-    // Upload the file to S3 and save the book information
-    const s3Key = `books/${fileName}`;
-    console.log("About to upload to S3 with key:", s3Key);
+    // Upload the file to Azure blob storage and save the book information
+    // Upload to Azure Blob Storage
+    const azureBlobName = `books/${fileName}`;
+    console.log("About to upload to Azure with blobName:", azureBlobName);
     const book = await uploadAndSaveBook(
       localPath,
-      s3Key,
+      azureBlobName,
       title,
       author,
       category._id,
@@ -131,7 +141,6 @@ bot.on("document", async (ctx) => {
     );
 
     console.log("Book uploaded and saved:", book);
-    // Send a message to the user with the book information
     fs.unlinkSync(localPath); // Clean up the local file after upload
     ctx.reply(`Book added: ${book.title} by ${book.author} in ${categoryName}`);
   } catch (error) {
@@ -139,6 +148,16 @@ bot.on("document", async (ctx) => {
     ctx.reply(`Error adding book: ${error.message}`);
   }
 });
+
+//     console.log("Book uploaded and saved:", book);
+//     // Send a message to the user with the book information
+//     fs.unlinkSync(localPath); // Clean up the local file after upload
+//     ctx.reply(`Book added: ${book.title} by ${book.author} in ${categoryName}`);
+//   } catch (error) {
+//     console.error("Error adding book:", error.message, error.stack);
+//     ctx.reply(`Error adding book: ${error.message}`);
+//   }
+// });
 bot.launch();
 
 //GET route
@@ -166,8 +185,7 @@ app.post("/api/book", async (req, res) => {
 
 // Start server
 app.listen(PORT, function (err) {
-  console.log(`Server running on http://localhost:${PORT}`);
-
+  console.log(`Server running on ${process.env.WEBHOOK_URL}`);
   // Graceful shutdown: kills the processes gradually to avoid memory problems
   process.once("SIGINT", () => bot.stop("SIGINT"));
   process.once("SIGTERM", () => bot.stop("SIGTERM"));
