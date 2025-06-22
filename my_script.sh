@@ -1,5 +1,7 @@
 #!/bin/bash
 
+fuser -k 3001/tcp 2>/dev/null
+
 SESSION_NAME="miladybot"
 
 # Kill session if it exists
