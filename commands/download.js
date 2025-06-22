@@ -1,42 +1,32 @@
 import Book from "../models/bookModel.js";
 import axios from "axios";
 import FormData from "form-data";
-import { BlobServiceClient } from "@azure/storage-blob";
 import dotenv from "dotenv";
-import http from "http"; // Add this line
+import http from "http"; // For http.Agent
 
 dotenv.config({ path: "../.env" });
 
 const downloadCommand = async (ctx) => {
-  const overallStart = Date.now();
-
-  const blobServiceClient = BlobServiceClient.fromConnectionString(
-    process.env.AZURE_STORAGE_CONNECTION_STRING
-  );
-  const containerClient = blobServiceClient.getContainerClient(
-    process.env.AZURE_CONTAINER_NAME || "books"
-  );
-
-  const MAX_SIZE = 20 * 1024 * 1024;
   let fileUrl = null;
   try {
-    const step1 = Date.now();
-
-    // Extract callback data
+    // Extract callback data and acknowledge immediately
     const callbackData = ctx.callbackQuery?.data;
     console.log("Callback Data:", callbackData);
 
     if (!callbackData) {
       return ctx.reply("Invalid book selection.");
     }
+    if (ctx.callbackQuery) {
+      await ctx.answerCbQuery();
+    }
 
-    // Extract book ID
     const bookId = callbackData.replace("book_", "").trim();
     console.log("Extracted book ID:", bookId);
 
     if (!/^[0-9a-f]{24}$/i.test(bookId)) {
       throw new Error(`Invalid book ID format: ${bookId}`);
     }
+
     // Fetch book from MongoDB
     const book = await Book.findById(bookId);
     if (!book) {
@@ -45,157 +35,99 @@ const downloadCommand = async (ctx) => {
     console.log("Fetched Book:", book);
 
     // Prepare file URL and name
-    const fileUrl = book.downloadUrl; // e.g., books/Aqeedah/Khalal_v1.pdf
+    fileUrl = book.downloadUrl;
     if (!fileUrl) {
-      throw Error(`Book "${book.title}" has no download URL`);
+      throw new Error(`Book "${book.title}" has no download URL`);
     }
-    const fileName = `${book.title.replace(
-      /[^a-zA-Z0-9\u0600-\u06FF ]/g,
-      ""
-    )}.pdf`;
+    const fileName = `${book.title.replace(/[^a-zA-Z0-9\u0600-\u06FF ]/g, "")}.pdf`;
     console.log("Prepared fileName:", fileName);
 
-    // Valide file URL
+    // Check cached Telegram file_id
+    if (book.telegramFileId) {
+      console.log("Using cached Telegram file_id:", book.telegramFileId);
+      await ctx.replyWithDocument(book.telegramFileId, {
+        caption: `${book.title} by ${book.author}`,
+      });
+      return;
+    }
 
-    const response = await axios.head(fileUrl, {
-      timeout: 5000, // 5 seconds timeout
-      headers: {
-        "User-Agent": "TelegramBot",
-        Accept: "application/pdf",
-      },
+    // Validate URL with timing
+    console.time("Azure HEAD request");
+    const headResponse = await axios.head(fileUrl, {
+      timeout: 5000,
+      headers: { "User-Agent": "TelegramBot", Accept: "application/pdf" },
     });
+    console.timeEnd("Azure HEAD request");
 
-    if (response.status !== 200) {
-      throw new Error(
-        `Blob URL is not accessible: ${fileUrl} (Status: ${response.status})`
-      );
+    if (headResponse.status !== 200) {
+      throw new Error(`URL is not accessible (Status: ${headResponse.status})`);
     }
-    const contentType = response.headers["content-type"]?.toLowerCase();
+    const contentType = headResponse.headers["content-type"]?.toLowerCase();
     if (!contentType?.includes("application/pdf")) {
-      throw new Error(
-        `Blob does not point to a PDF: ${fileUrl} (Content-Type: ${contentType})`
-      );
+      throw new Error(`URL does not point to a PDF (Content-Type: ${contentType})`);
     }
 
-    ////**************   */
-    // Generate SAS URL if blobs are private
-    // Extract blob name without container prefix
-    // const fullPath = fileUrl.split("/").slice(3).join("/"); // e.g., Aqeedah/Mokhtar.pdf
-    // const fullPath = fileUrl.split("/").slice(4).join("/");
-    // console.log("Derived Blob Name:", fullPath);
-    // const blockBlobClient = containerClient.getBlockBlobClient(fullPath);
+    const fileSize = parseInt(headResponse.headers["content-length"], 10);
+    console.log("File Size:", fileSize, "bytes");
 
-    // // Check if the file exists in Azure Blob Storage
-    // // const blobName = fileUrl.split("/").slice(-2).join("/");
-    // // const blockBlobClient = containerClient.getBlockBlobClient(blobName);
-    // const properties = await blockBlobClient.getProperties();
-    // const step2 = Date.now();
-    // console.log(
-    //   `[PROFILE] Step 1: Get Blob Properties: ${(step2 - step1) / 1000}s`
-    // );
+    // Status message
+    const statusMessage = await ctx.reply("📚 Preparing your book...");
 
-    // console.log("Blob Properties:", properties);
-    // if (properties.contentType?.toLowerCase() !== "application/pdf") {
-    //   throw new Error(
-    //     `Blob does not point to a PDF: ${fileUrl} (Content-Type: ${properties.contentType})`
-    //   );
-    // }
-    ///////*******************   */
-    // Get file size
-    const fileSize = parseInt(response.headers["content-length"], 10);
-    console.log("File Size:", fileSize);
-
-    // Stream file directly from Azure Blob Storage (public URL)
+    // Stream the file directly
+    console.time("Azure GET request");
     const downloadResponse = await axios({
       method: "get",
       url: fileUrl,
       responseType: "stream",
     });
-    const fileStream = downloadResponse.data;
+    console.timeEnd("Azure GET request");
 
     const formData = new FormData();
     formData.append("chat_id", ctx.chat.id);
-    formData.append("document", fileStream, {
+    formData.append("document", downloadResponse.data, {
       filename: fileName,
       contentType: "application/pdf",
     });
     formData.append("caption", `${book.title} by ${book.author}`);
 
-    const TELEGRAM_API = process.env.TELEGRAM_API || "https://api.telegram.org";
+    // Use self-hosted endpoint for large files
+    const TELEGRAM_API =
+      fileSize > 20 * 1024 * 1024
+        ? process.env.TELEGRAM_API_ROOT || "http://172.205.217.2:8081"
+        : "https://api.telegram.org";
 
-    let endpoint;
-    if (fileSize < MAX_SIZE) {
-      endpoint = "https://api.telegram.org";
-      console.log("Using official Telegram API endpoint for small file.");
-    } else {
-      endpoint = process.env.TELEGRAM_API_ROOT || "http://172.205.217.2:8081";
-      console.log(
-        "Using self-hosted Telegram Bot API endpoint for large file."
-      );
-    }
-    // Send file directly to Telegram via streaming
-
-    const startTime = Date.now();
     console.log("Starting file upload to Telegram...");
+    const startTime = Date.now();
 
-    const uploadStart = Date.now();
+    // Magic upload configuration
     const uploadResponse = await axios.post(
-      `${endpoint}/bot${process.env.BOT_TOKEN}/sendDocument`,
+      `${TELEGRAM_API}/sendDocument`, // Direct endpoint call
       formData,
       {
         headers: formData.getHeaders(),
         maxContentLength: Infinity,
         maxBodyLength: Infinity,
-        timeout: 120000, // Increase to 120 seconds for large files
-        maxRedirects: 5, // Allow more redirects if needed
-        httpAgent: new http.Agent({ keepAlive: true }), // Enable keep-alive for better connection reuse
-        timeout: fileSize > 20 * 1024 * 1024 ? 600000 : 30000, // 10min for large files
+        timeout: 120000, // 120 seconds
+        maxRedirects: 5,
+        httpAgent: new http.Agent({ keepAlive: true }), // The magic ingredient
       }
     );
 
-    const uploadEnd = Date.now();
+    const endTime = Date.now();
+    console.log(`Upload took ${((endTime - startTime) / 1000).toFixed(2)} seconds`);
 
     if (!uploadResponse.data.ok) {
-      throw new Error(
-        `Telegram API upload failed: ${JSON.stringify(uploadResponse.data)}`
-      );
+      throw new Error(`Upload failed: ${JSON.stringify(uploadResponse.data)}`);
     }
 
-    await ctx.reply("Your book has been sent!");
-    const overallEnd = Date.now();
-    console.log(`[PROFILE] Total time: ${(overallEnd - overallStart) / 1000}s`);
+    await ctx.telegram.deleteMessage(ctx.chat.id, statusMessage.message_id);
 
-    // let uploadEndpoint;
-    // let timeout;
-    // if (fileSize < MAX_SIZE) {
-    //   console.log("Sending small file via Telegram API");
-    //   uploadEndpoint = `https://api.telegram.org/bot${process.env.BOT_TOKEN}/sendDocument`;
-    //   // timeout = 30000; // 30 seconds for small files
-    // } else {
-    //   console.log("Proxying large file via hosted bot");
-    //   uploadEndpoint = `http://15.236.218.255/bot${process.env.BOT_TOKEN}/sendDocument`;
-    //   // timeout = 60000; // 60 seconds for large files
-    // }
-
-    // const uploadResponse = await axios.post(uploadEndpoint, formData, {
-    //   headers: formData.getHeaders(),
-    //   timeout,
-    //   maxContentLength: Infinity,
-    //   maxBodyLength: Infinity,
-    // });
-    const endTime = Date.now();
-    console.log(
-      `Upload took ${((endTime - startTime) / 1000).toFixed(2)} seconds`
-    );
-
-    // if (!uploadResponse.data.ok) {
-    //   throw new Error(`Upload failed: ${JSON.stringify(uploadResponse.data)}`);
-    // }
-    // console.log(
-    //   `Document sent successfully via ${
-    //     fileSize < MAX_SIZE ? "Telegram API" : "hosted bot"
-    //   }`
-    // );
+    // Cache the file_id for future use
+    if (uploadResponse.data.result && uploadResponse.data.result.document) {
+      const telegramFileId = uploadResponse.data.result.document.file_id;
+      await Book.findByIdAndUpdate(bookId, { telegramFileId });
+      console.log("Saved Telegram file_id for future use");
+    }
   } catch (error) {
     console.error("Error in downloadCommand:", {
       message: error.message || "No error message",

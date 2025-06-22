@@ -37,6 +37,7 @@ const bookSchema = new mongoose.Schema({
     type: String,
     required: true,
   },
+  telegramFileId: { type: String },
 });
 
 bookSchema.index({ category: 1 }); // Index the category field Improves performance when searching books by category.
