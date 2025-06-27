@@ -18,6 +18,7 @@
     "@azure/keyvault-secrets": "^4.10.0",
     "@azure/storage-blob": "^12.27.0",
     "@huggingface/hub": "^2.2.0",
+    "abort-controller": "^3.0.0",
     "axios": "^1.8.4",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
@@ -27,9 +28,13 @@
     "ngrok": "^5.0.0-beta.2",
     "node-telegram-bot-api": "^0.66.0",
     "nodemon": "^3.1.9",
+    "p-retry": "^6.2.1",
     "pdf-lib": "^1.17.1",
+    "stream-buffers": "^3.0.3",
     "telegraf": "^4.16.3",
     "typescript": "^5.8.2",
-    "ufw": "^1.0.3"
+    "ufw": "^1.0.3",
+    "winston": "^3.17.0",
+    "winston-daily-rotate-file": "^5.0.0"
   }
 }
