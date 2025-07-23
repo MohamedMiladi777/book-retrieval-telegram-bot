@@ -20,19 +20,21 @@ class BookService {
     this.config = configService;
     this.logger = loggerService;
     this.errorHandler = errorService;
+    this.seriesMappings = new Map();
 
     this.categories = [
-      "أدب",
-      "تاريخ و تراجم",
+      "سيرة",
       "تفسير",
       "حديث",
       "زهد و رقائق",
-      "سيرة",
       "عقيدة",
       "علوم_أخرى",
       "فقه",
       "قراءات",
     ];
+
+    // In-memory mapping of book IDs to book objects
+    this.bookMappings = new Map();
 
     if (!process.env.HF_API_TOKEN) {
       console.log("Token is required");
@@ -130,7 +132,8 @@ class BookService {
     const category = pathParts[0];
     const fileName = pathParts[pathParts.length - 1];
 
-    // Step 2: Remove .pdf extension
+    // Step 2: Detect collection structure 
+    
 
     const nameWithoutExt = fileName.replace(".pdf", "");
 
@@ -171,7 +174,137 @@ class BookService {
    * @returns {Promise<Array>} Array of book objects
    */
   async searchBooks(query = {}) {
-    // TODO: Implementation
+    try {
+      this.logger.info("Searching books with criteria", { query });
+
+      // Step 1: Get all books from dataset
+      // Your task: How do you get all books?
+      const allBooks = await this._listMyDatasetFiles();
+
+      // Step 2: Filter by category (if provided)
+      // Your task: How do you filter books where book.category === query.category?
+      const filteredBooks = allBooks.filter((book) => {
+        if (query.category) {
+          return book.category === query.category;
+        }
+        return true;
+      });
+
+      // Step 3: Filter by title (if provided) - partial match
+      // Your task: How do you filter books where book.title contains query.title?
+      const filteredByTitle = filteredBooks.filter((book) => {
+        if (query.title) {
+          return book.title.toLowerCase().includes(query.title.toLowerCase());
+        }
+        return true;
+      });
+
+      // Step 4: hFilter by author (if provided) - partial match
+      // Your task: How do you filter books where book.author contains query.author?
+      const filteredByAuthor = filteredByTitle.filter((book) => {
+        if (query.author) {
+          return book.author
+            ? book.author.toLowerCase().includes(query.author.toLowerCase())
+            : false;
+        }
+        return true;
+      });
+
+      // Step 5: Add unique IDs to books and return results
+      const booksWithIds = filteredByAuthor.map(book => {
+        const id = this._generateBookId(book);
+        // Store mapping for later retrieval
+        this._storeBookMapping(id, book);
+        return {
+          ...book,
+          id
+        };
+      });
+
+      this.logger.info(`Found ${booksWithIds.length} matching books`);
+      return booksWithIds;
+    } catch (error) {
+      this.logger.error("Search failed", { error: error.message, query });
+      throw new HuggingFaceError("Failed to search books");
+    }
+  }
+
+  /**
+   * Generate unique ID for a book (short for Telegram buttons)
+   * @param {Object} book - Book object
+   * @returns {string} Unique book ID (max 64 bytes for Telegram)
+   */
+  _generateBookId(book) {
+    // Create a short unique ID using just the file path hash
+    // This ensures uniqueness while staying under Telegram's 64-byte limit
+
+    const rawId = `${book.category}_${book.title}_${book.volume || 'single'}`;
+    const hash = this._simpleHash(rawId);
+
+    // Create a short ID: just hash with prefix
+    const shortId = `bk_${hash}`;
+
+    return shortId;
+  }
+
+  //method for debugging:
+async debugDatasetStructure() {
+  try {
+    const files = await this._listMyDatasetFiles();
+    console.log("=== DATASET STRUCTURE DEBUG ===");
+    console.log("Total files found:", files.length);
+    
+    // Show first 10 files with their paths
+    files.slice(0, 10).forEach((file, index) => {
+      console.log(`${index + 1}. ${file.filePath}`);
+      console.log(`   URL: ${file.downloadUrl}`);
+    });
+    
+    // Show files from سيرة category specifically
+    const seeraFiles = files.filter(f => f.category === 'سيرة');
+    console.log("\n=== SIRA CATEGORY FILES ===");
+    seeraFiles.forEach(file => {
+      console.log(`- ${file.filePath}`);
+      console.log(`  URL: ${file.downloadUrl}`);
+    });
+    
+  } catch (error) {
+    console.error("Debug error:", error);
+  }
+}
+
+  /**
+   * Simple hash function for creating short unique IDs
+   * @param {string} str - String to hash
+   * @returns {string} Short hash
+   */
+  _simpleHash(str) {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+      const char = str.charCodeAt(i);
+      hash = ((hash << 5) - hash) + char;
+      hash = hash & hash; // Convert to 32-bit integer
+    }
+    // Convert to positive number and then to base36 for shorter string
+    return Math.abs(hash).toString(36).substring(0, 8);
+  }
+
+  /**
+   * Store book ID to book object mapping
+   * @param {string} id - Book ID
+   * @param {Object} book - Book object
+   */
+  _storeBookMapping(id, book) {
+    this.bookMappings.set(id, book);
+  }
+
+  /**
+   * Get book object by ID
+   * @param {string} id - Book ID
+   * @returns {Object|null} Book object or null if not found
+   */
+  getBookById(id) {
+    return this.bookMappings.get(id) || null;
   }
 
   /**
@@ -182,6 +315,24 @@ class BookService {
   async getBookMetadata(bookId) {
     // TODO: Implementation
   }
+  
+  /**
+ * Store series ID to series title mapping
+ * @param {string} seriesId - Short series ID (like "sr_a7b3c9d2")
+ * @param {string} seriesTitle - Full series title
+ */
+storeSeriesMapping(seriesId, seriesTitle) {
+  this.seriesMappings.set(seriesId, seriesTitle);
+}
+
+/**
+ * Get series title by ID
+ * @param {string} seriesId - Short series ID
+ * @returns {string|null} Series title or null if not found
+ */
+getSeriesByID(seriesId) {
+  return this.seriesMappings.get(seriesId) || null;
+}
 
   /**
    * Download book and send to Telegram user

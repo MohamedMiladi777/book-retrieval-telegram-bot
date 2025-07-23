@@ -32,8 +32,8 @@ const configSchema = Joi.object({
   PORT: Joi.number().default(3001)
     .description('Port for Express server'),
   
-  WEBHOOK_URL: Joi.string().required()
-    .description('Public URL for Telegram webhooks'),
+  WEBHOOK_URL: Joi.string().allow('').optional()
+    .description('Public URL for Telegram webhooks (optional for polling mode)'),
 
   // Database Configuration
   MONGODB_URI: Joi.string().required()
@@ -121,7 +121,7 @@ function validateConfig() {
     // Bot settings
     bot: {
       token: value.BOT_TOKEN,
-      webhookUrl: value.WEBHOOK_URL,
+      webhookUrl: value.WEBHOOK_URL || null,
       adminIds: adminIds
     },
 
