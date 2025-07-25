@@ -5,14 +5,24 @@ import { Markup } from "telegraf";
 // Uses BookService to find books in that category from Hugging Face.
 // Displays books as interactive buttons inside an inline keyboard.
 // Uses try...catch to handle errors gracefully.
-const bookCommand = async (ctx, bookService) => {
+const bookCommand = async (ctx, bookService, directCategory = null) => {
   try {
-    const callbackData = ctx.callbackQuery?.data;
-    if (!callbackData) {
-      return ctx.reply("Invalid book selection");
-    }
 
-    const categoryName = callbackData.replace("category_", "");
+    let categoryName
+
+    if (directCategory){
+      categoryName = directCategory
+    }
+    else {
+      const callBackData = ctx.callbackQuery?.data;
+      categoryName = callBackData.replace("category_", "");
+    }
+    // const callbackData = ctx.callbackQuery?.data;
+    // if (!callbackData) {
+    //   return ctx.reply("Invalid book selection");
+    // }
+
+    // const categoryName = callbackData.replace("category_", "");
     // Don't replace underscores - use exact dataset category name
 
     bookService.logger.info("Extracting category name", { categoryName });

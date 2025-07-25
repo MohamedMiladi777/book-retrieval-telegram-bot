@@ -9,16 +9,16 @@ const categoriesCommand = async (ctx, bookService) => {
       return ctx.reply("No categories available at the moment.");
     }
 
-    const buttons = categories.map((category) =>
-      Markup.button.callback(
-        category.name.replace(/_/g, " "), // Show user-friendly name with spaces
-        `category_${category.name}` // Use exact dataset name for callback
-      )
-    );
+    // Create reply keyboard with brackets and spacing
+    const keyboard = [
+      ['[ تفسير ]', '[ حديث ]', '[ سيرة ]'],
+      ['[ عقيدة ]', '[ فقه ]', '[ زهد و رقائق ]'],
+      ['[ علوم أخرى ]', '[ قراءات ]']
+    ];
 
     await ctx.reply(
-      "📚 Select a book category:",
-      Markup.inlineKeyboard(buttons.map((btn) => [btn]))
+      "📚 **مكتبة الكتب الإسلامية**\n\nاختر قسماً من الأقسام التالية:",
+      Markup.keyboard(keyboard).resize()
     );
   } catch (error) {
     console.error("Error fetching categories:", error);

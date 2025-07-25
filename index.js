@@ -35,6 +35,41 @@ bot.on("callback_query", async (ctx) => {
   else if (callbackData?.startsWith("sr_")) {
     await seriesCommand(ctx, bookService);
   }
+});
+
+// Handle text messages for category selection
+bot.on('text', async (ctx) => {
+  const text = ctx.message.text;
+
+  // Map display names to actual category names
+  const categoryMap = {
+    '[ تفسير ]': 'تفسير',
+    'تفسير': 'تفسير',
+    '[ حديث ]': 'حديث',
+    'حديث': 'حديث',
+    '[ سيرة ]': 'سيرة',
+    'سيرة': 'سيرة',
+    '[ عقيدة ]': 'عقيدة',
+    'عقيدة': 'عقيدة',
+    '[ فقه ]': 'فقه',
+    'فقه': 'فقه',
+    '[ زهد و رقائق ]': 'زهد و رقائق',
+    'زهد و رقائق': 'زهد و رقائق',
+    '[ علوم أخرى ]': 'علوم_أخرى',
+    'علوم أخرى': 'علوم_أخرى',
+    'علوم_أخرى': 'علوم_أخرى',
+    '[ قراءات ]': 'قراءات',
+    'قراءات': 'قراءات'
+  };
+
+  const categoryName = categoryMap[text];
+  if (categoryName) {
+    // Create a fake callback query context for bookCommand
+    // ctx.callbackQuery = { data: `category_${categoryName}` };
+    await bookCommand(ctx, bookService,categoryName);
+  }
+});
+
   // } else if (callbackData?.startsWith("series_")) {
   //   const seriesId = callbackData.replace("series_", "");
   //   const seriesBooks = await Book.find({ seriesId }).sort({ title: 1 });
@@ -49,7 +84,7 @@ bot.on("callback_query", async (ctx) => {
   //     Markup.inlineKeyboard(keyboard, { columns: 1 })
   //   );
   // }
-});
+//});
 
 bot.launch();
 

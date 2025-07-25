@@ -30,7 +30,7 @@ const seriesCommand = async (ctx, bookService) => {
     const keyboard = seriesBooks
       .sort((a, b) => a.volume - b.volume)
       .map((book) => [
-        Markup.button.callback(`📖 ${book.title} - ${book.volume}`, `book_${book.id}`
+        Markup.button.callback(`📖 ${book.title} - $qq{book.volume}`, `book_${book.id}`
           
         ),
       ]);

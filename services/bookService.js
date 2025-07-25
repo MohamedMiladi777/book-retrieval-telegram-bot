@@ -122,18 +122,31 @@ class BookService {
   }
 
   /**
-   * Extract metadata from your file path
-   * @param {string} filePath - e.g., "تفسير/pdf/تفسير_الطبري/تفسير_الطبري_1.pdf"
-   * @returns {Object} - {category, title, author, volume, isMultiVolume}
-   */
+ * Extract metadata from your file path
+ * @param {string} filePath - e.g., "تفسير/pdf/تفسير_الطبري/تفسير_الطبري_1.pdf" or "تفسير/pdf/تفسير_مكة/book1/book1_1.pdf"
+ * @returns {Object} - {category, collection, title, author, volume, isMultiVolume}
+ */
   _extractMetadataFromPath(filePath) {
     // Step 1: Split the path and extract basic info
     const pathParts = filePath.split("/");
     const category = pathParts[0];
     const fileName = pathParts[pathParts.length - 1];
 
-    // Step 2: Detect collection structure 
-    
+    // Step 2: Detect collection structure
+    // The stcuture for a collection is category/pdf/collection/bookFolder/file.pdf
+    let collection = null;
+    let bookFolder = null;
+
+    if (pathParts === 5) {
+      collection = pathParts[2];
+      bookFolder = pathParts[3];
+    }
+    // The normal structure is category/pdf/bookFolder/file.pdf
+    else if (pathParts === 4) {
+      collection = pathParts[1];
+      bookFolder = pathParts[2];
+    }
+    // Step 3: Remove .pdf extension
 
     const nameWithoutExt = fileName.replace(".pdf", "");
 
@@ -157,6 +170,7 @@ class BookService {
 
     return {
       category,
+      collection: collection ? collection.replace(/_/g, " ") : null,
       title: title.trim(),
       author: author ? author.trim() : null,
       volume,
@@ -211,13 +225,13 @@ class BookService {
       });
 
       // Step 5: Add unique IDs to books and return results
-      const booksWithIds = filteredByAuthor.map(book => {
+      const booksWithIds = filteredByAuthor.map((book) => {
         const id = this._generateBookId(book);
         // Store mapping for later retrieval
         this._storeBookMapping(id, book);
         return {
           ...book,
-          id
+          id,
         };
       });
 
@@ -238,7 +252,7 @@ class BookService {
     // Create a short unique ID using just the file path hash
     // This ensures uniqueness while staying under Telegram's 64-byte limit
 
-    const rawId = `${book.category}_${book.title}_${book.volume || 'single'}`;
+    const rawId = `${book.category}_${book.title}_${book.volume || "single"}`;
     const hash = this._simpleHash(rawId);
 
     // Create a short ID: just hash with prefix
@@ -248,30 +262,29 @@ class BookService {
   }
 
   //method for debugging:
-async debugDatasetStructure() {
-  try {
-    const files = await this._listMyDatasetFiles();
-    console.log("=== DATASET STRUCTURE DEBUG ===");
-    console.log("Total files found:", files.length);
-    
-    // Show first 10 files with their paths
-    files.slice(0, 10).forEach((file, index) => {
-      console.log(`${index + 1}. ${file.filePath}`);
-      console.log(`   URL: ${file.downloadUrl}`);
-    });
-    
-    // Show files from سيرة category specifically
-    const seeraFiles = files.filter(f => f.category === 'سيرة');
-    console.log("\n=== SIRA CATEGORY FILES ===");
-    seeraFiles.forEach(file => {
-      console.log(`- ${file.filePath}`);
-      console.log(`  URL: ${file.downloadUrl}`);
-    });
-    
-  } catch (error) {
-    console.error("Debug error:", error);
+  async debugDatasetStructure() {
+    try {
+      const files = await this._listMyDatasetFiles();
+      console.log("=== DATASET STRUCTURE DEBUG ===");
+      console.log("Total files found:", files.length);
+
+      // Show first 10 files with their paths
+      files.slice(0, 10).forEach((file, index) => {
+        console.log(`${index + 1}. ${file.filePath}`);
+        console.log(`   URL: ${file.downloadUrl}`);
+      });
+
+      // Show files from سيرة category specifically
+      const seeraFiles = files.filter((f) => f.category === "سيرة");
+      console.log("\n=== SIRA CATEGORY FILES ===");
+      seeraFiles.forEach((file) => {
+        console.log(`- ${file.filePath}`);
+        console.log(`  URL: ${file.downloadUrl}`);
+      });
+    } catch (error) {
+      console.error("Debug error:", error);
+    }
   }
-}
 
   /**
    * Simple hash function for creating short unique IDs
@@ -282,7 +295,7 @@ async debugDatasetStructure() {
     let hash = 0;
     for (let i = 0; i < str.length; i++) {
       const char = str.charCodeAt(i);
-      hash = ((hash << 5) - hash) + char;
+      hash = (hash << 5) - hash + char;
       hash = hash & hash; // Convert to 32-bit integer
     }
     // Convert to positive number and then to base36 for shorter string
@@ -315,24 +328,24 @@ async debugDatasetStructure() {
   async getBookMetadata(bookId) {
     // TODO: Implementation
   }
-  
-  /**
- * Store series ID to series title mapping
- * @param {string} seriesId - Short series ID (like "sr_a7b3c9d2")
- * @param {string} seriesTitle - Full series title
- */
-storeSeriesMapping(seriesId, seriesTitle) {
-  this.seriesMappings.set(seriesId, seriesTitle);
-}
 
-/**
- * Get series title by ID
- * @param {string} seriesId - Short series ID
- * @returns {string|null} Series title or null if not found
- */
-getSeriesByID(seriesId) {
-  return this.seriesMappings.get(seriesId) || null;
-}
+  /**
+   * Store series ID to series title mapping
+   * @param {string} seriesId - Short series ID (like "sr_a7b3c9d2")
+   * @param {string} seriesTitle - Full series title
+   */
+  storeSeriesMapping(seriesId, seriesTitle) {
+    this.seriesMappings.set(seriesId, seriesTitle);
+  }
+
+  /**
+   * Get series title by ID
+   * @param {string} seriesId - Short series ID
+   * @returns {string|null} Series title or null if not found
+   */
+  getSeriesByID(seriesId) {
+    return this.seriesMappings.get(seriesId) || null;
+  }
 
   /**
    * Download book and send to Telegram user
