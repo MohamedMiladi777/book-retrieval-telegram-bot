@@ -5,25 +5,50 @@ import { Markup } from "telegraf";
 // Uses BookService to find books in that category from Hugging Face.
 // Displays books as interactive buttons inside an inline keyboard.
 // Uses try...catch to handle errors gracefully.
-const bookCommand = async (ctx, bookService, directCategory = null) => {
+const bookCommand = async (ctx, bookService, directCategory = null, pageNumber = 1) => {
   try {
+    // NOTE: No rate limiting here - users should browse freely
+    // Rate limiting only applies to actual downloads
 
-    let categoryName
-
-    if (directCategory){
-      categoryName = directCategory
-    }
-    else {
+    // STEP 1: Determine categoryName FIRST
+    let categoryName;
+    if (directCategory) {
+      categoryName = directCategory;
+    } else {
       const callBackData = ctx.callbackQuery?.data;
       categoryName = callBackData.replace("category_", "");
     }
-    // const callbackData = ctx.callbackQuery?.data;
-    // if (!callbackData) {
-    //   return ctx.reply("Invalid book selection");
-    // }
 
-    // const categoryName = callbackData.replace("category_", "");
-    // Don't replace underscores - use exact dataset category name
+    // STEP 2: Now we can use categoryName to search books
+    const books = await bookService.searchBooks({ category: categoryName });
+
+    // STEP 3: Set up pagination with the provided page number
+    const BOOKS_PER_PAGE = 8;
+    const page = pageNumber; // Use the page parameter instead of hardcoded 1
+
+    const startIndex = (page - 1) * BOOKS_PER_PAGE;
+    const endIndex = startIndex + BOOKS_PER_PAGE;
+    const booksToShow = books.slice(startIndex, endIndex);
+
+    // STEP 4: Set up pagination with navigation buttons
+    const keyboard = [];
+    
+    // Add pagination controls if needed
+    const paginationRow = [];
+    if (page > 1) {
+      paginationRow.push(
+        Markup.button.callback("◀️ السابق", `page_${page - 1}_${categoryName}`)
+      );
+    }
+    if (endIndex < books.length) {
+      paginationRow.push(
+        Markup.button.callback("التالي ▶️", `page_${page + 1}_${categoryName}`)
+      );
+    }
+    
+    if (paginationRow.length > 0) {
+      keyboard.push(paginationRow);
+    }
 
     bookService.logger.info("Extracting category name", { categoryName });
 
@@ -36,7 +61,6 @@ const bookCommand = async (ctx, bookService, directCategory = null) => {
       actualCategories,
     });
 
-    const books = await bookService.searchBooks({ category: categoryName });
     /*DEBIGGGGGIINGGNGINIGNIGNGN*/
     const multiVolumeBooks = books.filter((book) => book.isMultiVolume);
     console.log("DEBUG: Multi-volume books found:", multiVolumeBooks.length);
@@ -67,7 +91,7 @@ const bookCommand = async (ctx, bookService, directCategory = null) => {
     const singleBooks = [];
     const multiVolumeGroups = {};
 
-    for (const book of books) {
+    for (const book of booksToShow) {
       if (book.isMultiVolume) {
         // Group by title (books with same title are same series)
         if (!multiVolumeGroups[book.title]) {
@@ -79,10 +103,7 @@ const bookCommand = async (ctx, bookService, directCategory = null) => {
       }
     }
 
-    // Create keyboard buttons
-    const keyboard = [];
-
-    // Add multi-volume series buttons
+    // Add multi-volume series buttons to existing keyboard
     for (const seriesTitle in multiVolumeGroups) {
       const volumes = multiVolumeGroups[seriesTitle];
       const volumeCount = volumes.length;
@@ -125,8 +146,12 @@ const bookCommand = async (ctx, bookService, directCategory = null) => {
       return ctx.reply("📚 No books available in this category.");
     }
 
+    // Calculate pagination info for user feedback
+    const totalPages = Math.ceil(books.length / BOOKS_PER_PAGE);
+    const pageInfo = totalPages > 1 ? `\n📄 الصفحة ${page} من ${totalPages}` : "";
+
     await ctx.reply(
-      "📖 Select a book:",
+      `📖 Select a book:${pageInfo}`,
       Markup.inlineKeyboard(keyboard, { columns: 1 })
     );
   } catch (error) {

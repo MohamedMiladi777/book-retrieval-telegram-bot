@@ -21,6 +21,7 @@ class BookService {
     this.logger = loggerService;
     this.errorHandler = errorService;
     this.seriesMappings = new Map();
+    this.userRequests = new Map();
 
     this.categories = [
       "سيرة",
@@ -39,12 +40,29 @@ class BookService {
     if (!process.env.HF_API_TOKEN) {
       console.log("Token is required");
     }
+
+    // Initialize cleanup timer (run once)
+    this.initializeCleanup();
+  }
+
+  /**
+   * Initialize memory cleanup timer
+   */
+  initializeCleanup() {
+    // Clear mappings every hour to prevent memory leaks
+    setInterval(() => {
+      this.bookMappings.clear();
+      this.seriesMappings.clear();
+      this.userRequests.clear();
+      this.logger.info("Cleared old mappings for memory management");
+    }, 3600000); // 1 hour
   }
 
   /**
    * Get all available categories
    * @returns {Promise<Array>} Array of category objects
    */
+
   async getCategories() {
     // TODO: Implementation
     try {
@@ -122,10 +140,10 @@ class BookService {
   }
 
   /**
- * Extract metadata from your file path
- * @param {string} filePath - e.g., "تفسير/pdf/تفسير_الطبري/تفسير_الطبري_1.pdf" or "تفسير/pdf/تفسير_مكة/book1/book1_1.pdf"
- * @returns {Object} - {category, collection, title, author, volume, isMultiVolume}
- */
+   * Extract metadata from your file path
+   * @param {string} filePath - e.g., "تفسير/pdf/تفسير_الطبري/تفسير_الطبري_1.pdf" or "تفسير/pdf/تفسير_مكة/book1/book1_1.pdf"
+   * @returns {Object} - {category, collection, title, author, volume, isMultiVolume}
+   */
   _extractMetadataFromPath(filePath) {
     // Step 1: Split the path and extract basic info
     const pathParts = filePath.split("/");
@@ -137,12 +155,12 @@ class BookService {
     let collection = null;
     let bookFolder = null;
 
-    if (pathParts === 5) {
+    if (pathParts.length === 5) {
       collection = pathParts[2];
       bookFolder = pathParts[3];
     }
     // The normal structure is category/pdf/bookFolder/file.pdf
-    else if (pathParts === 4) {
+    else if (pathParts.length === 4) {
       collection = pathParts[1];
       bookFolder = pathParts[2];
     }
@@ -354,7 +372,50 @@ class BookService {
    * @returns {Promise<void>}
    */
   async downloadBook(bookId, ctx) {
-    // TODO: Implementation
+    try {
+      // Get book from mapping
+      const book = this.getBookById(bookId);
+      if (!book) {
+        throw new Error(`Book not found: ${bookId}`);
+      }
+
+      // Check file size limits
+      const maxSize = 50 * 1024 * 1024; // 50MB Telegram limit
+      if (book.size && book.size > maxSize) {
+        // Send download link for large files
+        return await ctx.reply(
+          `📁 File too large for direct download.\n📖 ${book.title}\n\n🔗 Click to download:`,
+          {
+            reply_markup: {
+              inline_keyboard: [[
+                { text: "📥 Download PDF", url: book.downloadUrl }
+              ]]
+            }
+          }
+        );
+      }
+
+      // Send file directly
+      await ctx.replyWithDocument(book.downloadUrl, {
+        caption: `📖 ${book.title}${book.author ? `\n✍️ ${book.author}` : ''}${book.category ? `\n📚 ${book.category}` : ''}`
+      });
+
+      this.logger.info('Book download successful', {
+        bookId,
+        title: book.title,
+        userId: ctx.from.id
+      });
+
+    } catch (error) {
+      this.logger.error('Book download failed', {
+        bookId,
+        error: error.message,
+        userId: ctx.from.id
+      });
+      
+      await ctx.reply('❌ Download failed. Please try again later.');
+      throw error;
+    }
   }
 
   /**
@@ -362,8 +423,66 @@ class BookService {
    * @param {string} bookId - Book identifier
    * @returns {Promise<Object>} Book metadata object
    */
+  async getBookMetadata(bookId) {
+    try {
+      const book = this.getBookById(bookId);
+      if (!book) {
+        throw new Error(`Book not found: ${bookId}`);
+      }
 
-  async downloadBook(bookId, ctx) {}
+      return {
+        id: bookId,
+        title: book.title,
+        author: book.author,
+        category: book.category,
+        collection: book.collection,
+        volume: book.volume,
+        isMultiVolume: book.isMultiVolume,
+        size: book.size,
+        downloadUrl: book.downloadUrl,
+        lastModified: book.lastModified
+      };
+    } catch (error) {
+      this.logger.error('Failed to get book metadata', {
+        bookId,
+        error: error.message
+      });
+      throw new Error(`Failed to get book metadata: ${error.message}`);
+    }
+  }
+
+  /**
+   * Check if user is within rate limits
+   * @param {number} userId - Telegram user ID
+   * @returns {boolean} - true if allowed, false if rate limited
+   */
+
+  checkRateLimit(userId) {
+    try {
+      const now = Date.now();
+      const userHistory = this.userRequests.get(userId) || [];
+
+      // Remove requests older than 1 minute (keep RECENT requests)
+      const recentRequests = userHistory.filter((time) => now - time < 60000);
+
+      // Check if user exceeded limit of 10 requests per minute
+      if (recentRequests.length >= 10) {
+        return false; // Block the user
+      }
+
+      // Add current request timestamp and save
+      recentRequests.push(now);
+      this.userRequests.set(userId, recentRequests);
+      return true; // Allow the user
+    } catch (error) {
+      this.logger.error('Rate limit check failed', {
+        userId,
+        error: error.message
+      });
+      // Fail safe: allow request if rate limiting fails
+      return true;
+    }
+  }
 }
 
 export default BookService;

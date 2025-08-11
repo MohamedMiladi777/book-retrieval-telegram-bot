@@ -2,6 +2,9 @@ import { Markup } from "telegraf";
 
 const seriesCommand = async (ctx, bookService) => {
   try {
+    // NOTE: No rate limiting here - browsing series volumes is free
+    // Rate limiting only applies to actual downloads
+
     const callBackData = ctx.callbackQuery?.data;
 
     if (!callBackData) {
@@ -30,7 +33,7 @@ const seriesCommand = async (ctx, bookService) => {
     const keyboard = seriesBooks
       .sort((a, b) => a.volume - b.volume)
       .map((book) => [
-        Markup.button.callback(`📖 ${book.title} - $qq{book.volume}`, `book_${book.id}`
+        Markup.button.callback(`📖 ${book.title} - ${book.volume}`, `book_${book.id}`
           
         ),
       ]);

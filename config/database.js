@@ -9,9 +9,9 @@ const connectDB = async () => {
       // useUnifiedTopology: true
     });
 
-    console.log("Cosmos Database is connected :)");
+    console.log(" Database is connected :)");
   } catch (error) {
-    console.error("CosmosDB connection failed", error.message);
+    console.error("connection failed", error.message);
     process.exit(1);
   }
 };

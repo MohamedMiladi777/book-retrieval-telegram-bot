@@ -1,5 +1,4 @@
-import { logger } from "@azure/storage-blob";
-import axios from "axios";
+import { logger } from "../logs/logger.js";import axios from "axios";
 import fs from "fs";
 
 // This function downloads a file from a given URL and saves it to the specified output path
@@ -12,6 +11,7 @@ const downloadFile = async (
   outputPath,
   timeout = parseInt(process.env.DOWNLOAD_TIMEOUT_MS || 120000)
 ) => {
+  const timer = logger.timeOperation("file_download");
   logger.info(`Starting download`, {
     url: url, // Log entire url
     outputPath,

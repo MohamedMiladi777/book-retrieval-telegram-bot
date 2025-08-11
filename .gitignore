@@ -9,6 +9,8 @@ milady-policy.json
 # Ignore environment variables file
 .env
 
+TODO.md
+
 # Ignore logs
 logs
 *.log
